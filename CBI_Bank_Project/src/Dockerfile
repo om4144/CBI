@@ -8,7 +8,7 @@ WORKDIR /app
 ADD https://jdbc.postgresql.org/download/postgresql-42.7.2.jar postgresql.jar
 
 # Copy the entire src folder
-COPY src ./src
+COPY src
 
 # Create a directory for compiled classes
 RUN mkdir classes
