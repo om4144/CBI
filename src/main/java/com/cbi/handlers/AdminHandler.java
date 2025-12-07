@@ -8,6 +8,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.Map;
+import java.time.format.DateTimeFormatter;
 
 import com.cbi.db.Database;
 import com.cbi.utils.SessionManager;
@@ -47,6 +48,13 @@ public class AdminHandler implements HttpHandler {
 
     private void showDashboard(HttpExchange exchange) throws IOException {
         String query = exchange.getRequestURI().getQuery();
+        
+        // --- NEW FEATURE: VIEW ALL USERS ---
+        if (query != null && query.contains("view=users")) {
+            showUsersList(exchange);
+            return;
+        }
+        
         String msg = (query != null && query.contains("msg=")) ? java.net.URLDecoder.decode(query.split("msg=")[1], "UTF-8") : "";
 
         String html = ViewHelper.getHeader("CBI Admin") +
@@ -84,15 +92,58 @@ public class AdminHandler implements HttpHandler {
             "</form>" +
             "</div>" +
 
+            // --- NEW CARD: VIEW USERS BUTTON ---
+            "<div class='card'>" +
+            "<h3>&#128196; Bank Database</h3>" +
+            "<p>View details of all registered customers, including account age and current balance.</p>" +
+            "<a href='/admin?view=users' style='display:inline-block; width:100%; text-align:center; background-color:#34495e; color:white; padding:12px; margin-top:10px; border-radius:4px; text-decoration:none; box-sizing:border-box;'>View All Customers</a>" +
+            "</div>" +
+
             "</div>" + // End Grid
             ViewHelper.getFooter();
 
-        byte[] responseBytes = html.getBytes("UTF-8");
-        exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
-        exchange.sendResponseHeaders(200, responseBytes.length);
-        OutputStream os = exchange.getResponseBody();
-        os.write(responseBytes);
-        os.close();
+        sendHtmlResponse(exchange, html);
+    }
+
+    // --- NEW METHOD: GENERATE USER TABLE ---
+    private void showUsersList(HttpExchange exchange) throws IOException {
+        StringBuilder html = new StringBuilder();
+        html.append(ViewHelper.getHeader("CBI Customer Records"));
+        html.append("<div class='navbar'><div><h1>CBI Records</h1><small>Confidential</small></div><a href='/admin' class='btn-logout' style='background-color:#2980b9;'>Back to Dashboard</a></div>");
+        
+        html.append("<div class='container' style='max-width:900px;'>");
+        html.append("<h3>Registered Customers</h3>");
+        html.append("<table>");
+        html.append("<tr><th>Name</th><th>Account ID</th><th>Opening Date</th><th>Current Balance</th></tr>");
+
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement("SELECT name, account_id, created_at, balance FROM users WHERE role != 'EMPLOYEE' ORDER BY created_at DESC")) {
+             
+             ResultSet rs = ps.executeQuery();
+             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+
+             while(rs.next()) {
+                 String dateStr = "N/A";
+                 if(rs.getTimestamp("created_at") != null) {
+                     dateStr = rs.getTimestamp("created_at").toLocalDateTime().format(formatter);
+                 }
+                 
+                 html.append("<tr>")
+                     .append("<td>").append(rs.getString("name")).append("</td>")
+                     .append("<td>").append(rs.getString("account_id")).append("</td>")
+                     .append("<td>").append(dateStr).append("</td>")
+                     .append("<td>&#8377;").append(String.format("%.2f", rs.getDouble("balance"))).append("</td>")
+                     .append("</tr>");
+             }
+        } catch(Exception e) {
+             html.append("<tr><td colspan='4' style='color:red;'>Error loading data: ").append(e.getMessage()).append("</td></tr>");
+        }
+
+        html.append("</table>");
+        html.append("</div>"); // End container
+        html.append(ViewHelper.getFooter());
+
+        sendHtmlResponse(exchange, html.toString());
     }
 
     private void handlePost(HttpExchange exchange, Map<String, String> params) throws IOException {
@@ -104,7 +155,6 @@ public class AdminHandler implements HttpHandler {
                 String targetId = params.get("targetId");
                 double amount = Double.parseDouble(params.get("amount"));
                 
-                // Update Balance
                 PreparedStatement ps = conn.prepareStatement("UPDATE users SET balance = balance + ? WHERE account_id = ?");
                 ps.setDouble(1, amount);
                 ps.setString(2, targetId);
@@ -112,7 +162,6 @@ public class AdminHandler implements HttpHandler {
                 
                 if (rows == 0) throw new Exception("Account ID not found");
 
-                // Log Transaction
                 PreparedStatement psLog = conn.prepareStatement("INSERT INTO transactions (account_id, type, amount, related_name) VALUES (?, 'ADMIN_DEPOSIT', ?, 'Bank Branch')");
                 psLog.setString(1, targetId);
                 psLog.setDouble(2, amount);
@@ -141,5 +190,14 @@ public class AdminHandler implements HttpHandler {
             exchange.getResponseHeaders().set("Location", "/admin?msg=" + error);
             exchange.sendResponseHeaders(302, -1);
         }
+    }
+
+    private void sendHtmlResponse(HttpExchange exchange, String response) throws IOException {
+        byte[] responseBytes = response.getBytes("UTF-8");
+        exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
+        exchange.sendResponseHeaders(200, responseBytes.length);
+        OutputStream os = exchange.getResponseBody();
+        os.write(responseBytes);
+        os.close();
     }
 }
