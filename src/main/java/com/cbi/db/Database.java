@@ -8,9 +8,9 @@ import java.sql.SQLException;
 public class Database {
     public static Connection getConnection() throws SQLException {
 
-        String dbUrl = "jdbc:postgresql://ep-twilight-star-a1aq8c4l-pooler.ap-southeast-1.aws.neon.tech/neondb";
-        String dbUser = "neondb_owner";
-        String dbPass = "npg_YmCo2PO6zuEr";
+        String dbUrl = System.getenv("DB_URL");
+        String dbUser = System.getenv("DB_USER");
+        String dbPass = System.getenv("DB_PASSWORD");
 
         return DriverManager.getConnection(dbUrl, dbUser, dbPass);
     }
